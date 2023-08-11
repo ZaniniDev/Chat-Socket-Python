@@ -1,0 +1,1 @@
+from .criptografia.utils import gerar_codigo_hash_aleatorio
