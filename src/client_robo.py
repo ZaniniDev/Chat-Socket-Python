@@ -277,7 +277,7 @@ class ClientRobo:
 if __name__ == "__main__":
     HOST = "10.255.255.10"
     PORT = 33000
-    caminhoBD = "C:\\Users\\MarcusViniciusSoares\\OneDrive - GRANT THORNTON BRASIL\\Área de Trabalho\\Projetos\\ChatBotUniversal\\ChatBotUniversal\\chatbotui\\db\\repository\\chatbot.db"
+    caminhoBD = "C:\\Users\\victt\\Desktop\\Marcus\\Projetos\\Chatbot\\chatbotui\\db\\repository\\chatbot.db"
     controllerUsuario = UsuarioController(caminhoBD)
     idusuario = input("Digite o id do usuario: ")
     usuario = controllerUsuario.buscar_usuario_por_id(idusuario) 

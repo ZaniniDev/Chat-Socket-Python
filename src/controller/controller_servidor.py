@@ -239,7 +239,7 @@ class ServidorClienteController:
         return True
     
     @classmethod
-    def adicionar_nova_mensagem_robo(self, caminhodb, celular_usuario, celular_robo, mensagem, id_robo, id_pergunta, id_mensagem_pergunta, horariomensagem = None, mensagem_encerramento = False, destinatariogrupo = None):
+    def adicionar_nova_mensagem_robo(self, caminhodb, celular_usuario, celular_robo, mensagem, id_robo, id_pergunta, id_mensagem_pergunta, horariomensagem = None, tentativa_resposta = 1, mensagem_encerramento = False, destinatariogrupo = None):
         servicedb = ServicoSQLite(caminhodb)
         servicedb.conectar() 
         if(horariomensagem == None or horariomensagem == ""):
@@ -249,8 +249,8 @@ class ServidorClienteController:
             datetime_brasil = datetime_utc - timedelta(hours=3)
             horariomensagem = datetime_brasil
         remetente_robo = 1
-        colunasInsert = ["celular_remetente", "celular_destinatario", "mensagem", "horariomensagem", "remetente_robo", "id_robo", "id_pergunta", "id_mensagem_pergunta"]
-        valoresInsert = [celular_robo, celular_usuario, mensagem, horariomensagem, remetente_robo, id_robo, id_pergunta, id_mensagem_pergunta]
+        colunasInsert = ["celular_remetente", "celular_destinatario", "mensagem", "horariomensagem", "remetente_robo", "id_robo", "id_pergunta", "id_mensagem_pergunta", "tentativa_resposta"]
+        valoresInsert = [celular_robo, celular_usuario, mensagem, horariomensagem, remetente_robo, id_robo, id_pergunta, id_mensagem_pergunta, tentativa_resposta]
         servicedb.executar_insert("historico_mensagens", colunasInsert, valoresInsert)
         servicedb.desconectar() 
         return True
@@ -261,10 +261,10 @@ class ServidorClienteController:
         servicedb.conectar()  
         #procura o usuario pelo celular
         query_ultima_mensagem_usuario = """
-            SELECT id, id_pergunta, horariomensagem, mensagem_encerramento
+            SELECT id, id_pergunta, horariomensagem, mensagem_encerramento, tentativa_resposta
                 FROM historico_mensagens
                 WHERE celular_destinatario = ? and celular_remetente = ?
-                ORDER BY horariomensagem DESC
+                ORDER BY horariomensagem DESC, id DESC
                 LIMIT 1;
         """
         ultima_mensagem = servicedb.executar_query(query_ultima_mensagem_usuario, [celular_cliente, celular_robo])      
@@ -272,18 +272,75 @@ class ServidorClienteController:
         return ultima_mensagem
     
     @classmethod
+    def procura_ultima_pergunta_enviada_robo(self, caminhodb, celular_cliente, celular_robo):
+        servicedb = ServicoSQLite(caminhodb)
+        servicedb.conectar()  
+        #procura o usuario pelo celular
+        query_ultima_mensagem_usuario = """
+            SELECT id, id_pergunta, horariomensagem, mensagem_encerramento
+                FROM historico_mensagens
+                WHERE celular_destinatario = ? and celular_remetente = ? and id_pergunta is not null
+                ORDER BY horariomensagem DESC
+                LIMIT 1;
+        """
+        ultima_pergunta_enviada = servicedb.executar_query(query_ultima_mensagem_usuario, [celular_cliente, celular_robo])      
+        servicedb.desconectar() 
+        return ultima_pergunta_enviada
+    
+    @classmethod
     def procura_pergunta_menu_robo(self, caminhodb, id_robo):
         servicedb = ServicoSQLite(caminhodb)
         servicedb.conectar()  
         #procura o usuario pelo celular
         query_pergunta_menu_robo = """
-            SELECT id_pergunta
-                FROM pergunta_menu
-                WHERE id_robo = ?
+            SELECT id_pergunta_menu
+                FROM robos
+                WHERE id = ?
                 LIMIT 1;
         """
         id_pergunta = servicedb.executar_query(query_pergunta_menu_robo, [id_robo])       
         servicedb.desconectar() 
         return id_pergunta
     
+    @classmethod
+    def procura_pergunta_encerramento_robo(self, caminhodb, id_robo):
+        servicedb = ServicoSQLite(caminhodb)
+        servicedb.conectar()  
+        #procura o usuario pelo celular
+        query_pergunta_menu_robo = """
+            SELECT id_pergunta_encerramento
+                FROM robos
+                WHERE id = ?
+                LIMIT 1;
+        """
+        id_pergunta = servicedb.executar_query(query_pergunta_menu_robo, [id_robo])       
+        servicedb.desconectar() 
+        return id_pergunta
+    
+    @classmethod
+    def salvar_variavel_resposta_cliente(self, caminhodb, id_robo, celular_remetente, nome_variavel, valor):
+        servicedb = ServicoSQLite(caminhodb)
+        servicedb.conectar()  
+        key_remetente_variavel = celular_remetente + "_" + str(id_robo) + "_" + nome_variavel
+        #procura o usuario pelo celular
+        colunasInsert = ["celular_remetente", "id_robo", "nome", "key_remetente_variavel", "valor"]
+        valoresInsert = [celular_remetente, id_robo, nome_variavel, key_remetente_variavel, valor]
+        servicedb.executar_insert("variaveis", colunasInsert, valoresInsert)
+        id_variavel = servicedb.executar_insert_or_replace("variaveis", colunasInsert, valoresInsert)       
+        servicedb.desconectar() 
+        return id_variavel
+    
+    @classmethod
+    def buscar_variavel_cadastrada_cliente(self, caminhodb, id_robo, celular_remetente, nome_variavel):
+        servicedb = ServicoSQLite(caminhodb)
+        servicedb.conectar() 
+        query_buscar_variavel = "SELECT valor FROM variaveis WHERE id_robo = ? and celular_remetente = ? and nome = ?"
+        valores_query = [id_robo, celular_remetente, nome_variavel]
+        result_valor = servicedb.executar_query(query_buscar_variavel, valores_query)
+        valor_variavel = None
+        if result_valor:
+            for row in result_valor:
+                valor_variavel = row[0]
+        servicedb.desconectar() 
+        return valor_variavel
     

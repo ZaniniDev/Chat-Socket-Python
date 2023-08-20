@@ -12,20 +12,57 @@ def gerar_id_unico(tamanho = 12):
     id_unico = ''.join(random.choice(caracteres) for _ in range(tamanho))
     return id_unico
 
-def input_resposta_opcoes(id_pergunta, titulo_pergunta):
+def input_resposta_variavel(id_pergunta, titulo_pergunta = ""):
+    respostas_variaveis = []
+    tipo_resposta = "variavel"
+    opcao = 1
+    nome_variavel = input("Digite o nome da variavel de resposta para a pergunta ("+str(id_pergunta)+") "+titulo_pergunta+":\n")
+    nome_variavel = str(nome_variavel).lower().replace(" ","_").strip()
+    desc_variavel = input("Explique o que é esta variável:\n")
+    tipo_variavel = input("Digite se o valor da variavél deve ser: 1-Texto 2-Numero 3-Data 4-Hora 5-Data + Horario\n")
+    if tipo_variavel == "1":
+        tipo_variavel = "texto"
+    elif tipo_variavel == "2":
+        tipo_variavel = "numero"
+    elif tipo_variavel == "3":
+        tipo_variavel = "data"
+    elif tipo_variavel == "4":
+        tipo_variavel = "hora"
+    elif tipo_variavel == "5":
+        tipo_variavel = "datahora"
+    else:
+        tipo_variavel = "texto"
+    id_proxima_pergunta_input = input("Digite o ID da proxima pergunta ou ENTER para não cadastrar proxima pergunta: \n")
+    id_proxima_pergunta = None
+    if(id_proxima_pergunta_input != None and id_proxima_pergunta_input != ""):
+        try:
+            id_proxima_pergunta = int(id_proxima_pergunta_input)
+        except:
+            print("O ID digitado não é valido! "+id_proxima_pergunta_input)
+    respostas_variaveis.append({"id_pergunta": id_pergunta, "tipo_resposta": tipo_resposta, "variavel": nome_variavel, "tipo_variavel":tipo_variavel, "resposta": desc_variavel, "proxima_pergunta": id_proxima_pergunta})
+    
+    return respostas_variaveis
+
+def input_resposta_opcoes(id_pergunta, titulo_pergunta = ""):
     #proxima pergunta = -2 -> Erro: a antiga pergunta foi removida
     #proxima pergunta = -1 -> Não foi configurada ainda
     #proxima pergunta = 0 -> Não existe proxima pergunta
     respostas_opcoes = []
     tipo_resposta = "opcao"
     opcao = 1
-    opcaopergunta = input("Digite a "+str(opcao)+"° opção da sua pergunta '"+titulo_pergunta+"':\n")
-    respostas_opcoes.append({"id_pergunta": id_pergunta, "opcao": opcao, "tipo_resposta":tipo_resposta, "resposta": opcaopergunta, "proxima_pergunta": -1})
-    opcao += 1
+    opcaopergunta = "-1"
     while(opcaopergunta != "" and opcaopergunta != "0"):
-        opcaopergunta = input("Digite a "+str(opcao)+"° opção da sua pergunta: "+titulo_pergunta+" ou pressione 0 para finalizar o cadastro de respostas:\n")        
+        opcaopergunta = input("Digite a "+str(opcao)+"° opção da sua pergunta ("+str(id_pergunta)+") : "+titulo_pergunta+" ou pressione 0 para finalizar o cadastro de respostas:\n")        
+        id_proxima_pergunta_input = input("Digite o ID da proxima pergunta ou ENTER para não cadastrar proxima pergunta: \n")
+        id_proxima_pergunta = -1
+        if(id_proxima_pergunta_input != "" and id_proxima_pergunta_input != "0"):
+            try:
+                id_proxima_pergunta = int(id_proxima_pergunta_input)
+            except:
+                print("O ID digitado não é valido! "+id_proxima_pergunta_input)
+            id_proxima_pergunta = -1
         if(opcaopergunta != "" and opcaopergunta != "0"):
-            respostas_opcoes.append({"id_pergunta": id_pergunta, "opcao": opcao, "tipo_resposta":tipo_resposta, "resposta": opcaopergunta, "proxima_pergunta": -1})
+            respostas_opcoes.append({"id_pergunta": id_pergunta, "opcao": opcao, "tipo_resposta":tipo_resposta, "resposta": opcaopergunta, "proxima_pergunta": id_proxima_pergunta})
             opcao += 1
         else:
             break
@@ -56,15 +93,16 @@ def escrever_arquivojson(caminho, objJson):
 
 def cadastrar_novas_perguntas(caminhodbjson, caminhodbchatbot, id_robo):
     fluxo_perguntas_respostas = []
-    id_pergunta = gerar_id_unico()
-    titulo_pergunta = ""    
-    mensagens_pergunta = [] 
-    respostas_pergunta = []   
+    
     fim_fluxo = False
     controllerPerguntas = PerguntasController(caminhodbchatbot)  
     respostas_controller = RespostasController(caminhodbchatbot)
   
     while(fim_fluxo == False):
+        id_pergunta = gerar_id_unico()
+        titulo_pergunta = ""    
+        mensagens_pergunta = [] 
+        respostas_pergunta = []   
         titulo_pergunta = input("Digite o titulo da pergunta:\n")
         descricao_pergunta = input("Digite a descrição para essa pergunta:\n")
         msg_pergunta = input("Digite a primeira mensagem da sua pergunta:\n")
@@ -117,6 +155,20 @@ def cadastrar_novas_perguntas(caminhodbjson, caminhodbchatbot, id_robo):
                     print("Operação cancelada!")
                     break
             elif(tipo_resposta == "2"):
+                respostas = input_resposta_variavel(id_pergunta, titulo_pergunta)
+                confirmacao_respostas = input("Confirma a criação das respostas da pergunta: "+titulo_pergunta+"? Digite 1 para confirmar ou 0/ENTER para cancelar.")
+                if(confirmacao_respostas == "1"):
+                    # Parte de cadastro das perguntas e respostas no banco de dados 
+                    for resposta in respostas:
+                        tipo_resposta = resposta["tipo_resposta"]  # Tipo de resposta (por exemplo, "texto", "opção", "variável")
+                        descricao_variavel = resposta["resposta"]  # Conteúdo da resposta
+                        nome_variavel = str(resposta["variavel"])  # Se a resposta for do tipo "opção", aqui é informada a opção relacionada
+                        id_proxima_pergunta = resposta["proxima_pergunta"]
+                        tipo_variavel = resposta["tipo_variavel"]
+                        id_resposta = respostas_controller.cadastrar_resposta(id_pergunta=id_pergunta, tipo_resposta=tipo_resposta, resposta=descricao_variavel, variavel=nome_variavel, id_proxima_pergunta=id_proxima_pergunta, tipo_variavel=tipo_variavel)
+                else:
+                    print("Operação cancelada!")
+                    break
                 #fazer funcao para a resposta ser do para salvar uma variavel do cliente
                 #vai salvar em uma tabela a parte chamada variaveis, com referencia ao cliente
                 #campos: id_cliente, nomecliente, variavel, valor
@@ -154,6 +206,65 @@ def limpar_tabela(caminhodbchatbot):
     respostas = controllerRespostas.limpar_tabelas()
     return perguntas
 
+def cadastrar_resposta(caminhodbchatbot, id_pergunta = ""):
+    respostas_controller = RespostasController(caminhodbchatbot)
+    perguntas_controller = PerguntasController(caminhodbchatbot)
+    while True:
+        if(id_pergunta == ""):
+            id_pergunta = input("Digite o ID da pergunta que você quer cadastrar a resposta:\n")
+        id_pergunta = int(id_pergunta)
+        pergunta = perguntas_controller.obter_pergunta(id_pergunta)
+        titulo_pergunta = pergunta.titulo
+        perguntacomresposta = input("Digite 1 se essa pergunta tiver resposta ou 2 para finalizar esta pergunta:\n")
+        if(perguntacomresposta == "2"):
+            pass
+        elif(perguntacomresposta == "1"):
+            tipo_resposta = input("Digite o tipo de resposta. \n1 - Resposta com Opções. \n2 - Resposta para salvar variavel do cliente.\n")
+            respostas = []
+            #{"tipo_resposta":{"tipo":tipo_resposta, "opcao": opcao}, "mensagem": opcaopergunta, "proxima_pergunta": -1}
+            if(tipo_resposta == "1"):            
+                respostas = input_resposta_opcoes(id_pergunta, titulo_pergunta)
+                confirmacao_respostas = input("Confirma a criação das respostas da pergunta: "+titulo_pergunta+"? Digite 1 para confirmar ou 0/ENTER para cancelar.")
+                if(confirmacao_respostas == "1"):
+                    # Parte de cadastro das perguntas e respostas no banco de dados 
+                    for resposta in respostas:
+                        tipo_resposta = resposta["tipo_resposta"]  # Tipo de resposta (por exemplo, "texto", "opção", "variável")
+                        msg_resposta = resposta["resposta"]  # Conteúdo da resposta
+                        opcao = str(resposta["opcao"])  # Se a resposta for do tipo "opção", aqui é informada a opção relacionada
+                        id_proxima_pergunta = resposta["proxima_pergunta"]
+                        id_resposta = respostas_controller.cadastrar_resposta(id_pergunta=id_pergunta, tipo_resposta=tipo_resposta, resposta=msg_resposta, opcao=opcao, id_proxima_pergunta=id_proxima_pergunta)
+                else:
+                    print("Operação cancelada!")
+                    
+                    return
+            elif(tipo_resposta == "2"):
+                respostas = input_resposta_variavel(id_pergunta, titulo_pergunta)
+                confirmacao_respostas = input("Confirma a criação das respostas da pergunta: "+titulo_pergunta+"? Digite 1 para confirmar ou 0/ENTER para cancelar.")
+                if(confirmacao_respostas == "1"):
+                    # Parte de cadastro das perguntas e respostas no banco de dados 
+                    print(respostas)
+                    for resposta in respostas:
+                        tipo_resposta = resposta["tipo_resposta"]  # Tipo de resposta (por exemplo, "texto", "opção", "variável")
+                        descricao_variavel = resposta["resposta"]  # Conteúdo da resposta
+                        nome_variavel = str(resposta["variavel"])  # Se a resposta for do tipo "opção", aqui é informada a opção relacionada
+                        id_proxima_pergunta = resposta["proxima_pergunta"]
+                        tipo_variavel = resposta["tipo_variavel"]
+                        id_resposta = respostas_controller.cadastrar_resposta(id_pergunta=id_pergunta, tipo_resposta=tipo_resposta, resposta=descricao_variavel, variavel=nome_variavel, id_proxima_pergunta=id_proxima_pergunta, tipo_variavel=tipo_variavel)
+                        print("Criou resposta - "+str(id_resposta))
+                else:
+                    print("Operação cancelada!")
+                    break
+                #fazer funcao para a resposta ser do para salvar uma variavel do cliente
+                #vai salvar em uma tabela a parte chamada variaveis, com referencia ao cliente
+                #campos: id_cliente, nomecliente, variavel, valor
+                pass
+            
+        finalizarPeguntas = input("Deseja finalizar o cadastro? Digite uma das opções:\n1-Continuar cadastro\n0-Sair\n")
+        if(finalizarPeguntas == "1"):
+            id_pergunta = ""
+            continue
+        else:
+            break
 
 # Função para simular o input
 def input_simulado(valores):
@@ -258,6 +369,11 @@ def input_cadastrar_novas_perguntas():
 
 if __name__ == "__main__":
     # test_limpar_tabela()
-    test_listar_perguntas()    
-    input_cadastrar_novas_perguntas()
+    test_listar_perguntas()  
+    caminhodb = "db\\repository\\chatbot.db"  
+    servico_chatbot = input("Digite o serviço do chatbot para entrar: 1-Cadastrar novas perguntas, 2-Cadastrar novas respostas\n")
+    if(servico_chatbot == "1"):
+        input_cadastrar_novas_perguntas()
+    elif(servico_chatbot == "2"):
+        cadastrar_resposta(caminhodb)
     # test_cadastrar_novas_perguntas()

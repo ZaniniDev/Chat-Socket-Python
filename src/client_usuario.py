@@ -82,16 +82,16 @@ class ClienteUsuario:
         self.janela = tk.Tk()
         self.janela.title("Cliente")
         self.janela.configure(bg="#DCDCDC")
-        self.janela.geometry("+1024+10")
-        # largura = 800  # Defina a largura desejada da janela
-        # altura = 600   # Defina a altura desejada da janela
+        # self.janela.geometry("+1024+10")
+        largura = 1000  # Defina a largura desejada da janela
+        altura = 600   # Defina a altura desejada da janela
         
-        # # Calcula a posição para centralizar a janela na tela
-        # x_pos = (self.janela.winfo_screenwidth() - largura) // 2
-        # y_pos = (self.janela.winfo_screenheight() - altura) // 2
+        # Calcula a posição para centralizar a janela na tela
+        x_pos = (self.janela.winfo_screenwidth() - largura) // 2
+        y_pos = (self.janela.winfo_screenheight() - altura) // 2
         
-        # # Define a geometria da janela com largura, altura e posição
-        # self.janela.geometry(f"{largura}x{altura}+{x_pos}+{y_pos}")
+        # Define a geometria da janela com largura, altura e posição
+        self.janela.geometry(f"{largura}x{altura}+{x_pos}+{y_pos}")
 
         self.messages_frame = tk.Frame(self.janela)
         self.meu_nome = tk.StringVar()
@@ -357,7 +357,7 @@ class ClienteUsuario:
 if __name__ == "__main__":
     HOST = "localhost"
     PORT = 33000
-    caminhoBD = "C:\\Users\\MarcusViniciusSoares\\OneDrive - GRANT THORNTON BRASIL\\Área de Trabalho\\Projetos\\ChatBotUniversal\\ChatBotUniversal\\chatbotui\\db\\repository\\chatbot.db"
+    caminhoBD = "C:\\Users\\victt\\Desktop\\Marcus\\Projetos\\Chatbot\\chatbotui\\db\\repository\\chatbot.db"
     idusuario = input("Digite o id do usuario: ")
     controllerUsuario = UsuarioController(caminhoBD)
     usuario = controllerUsuario.buscar_usuario_por_id(idusuario) 

@@ -45,6 +45,11 @@ class ServicoSQLite:
         """Executa uma inserção de dados na tabela."""
         query = f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({', '.join(['?'] * len(values))})"
         return self.executar_query(query, values)
+    
+    def executar_insert_or_replace(self, table, columns, values):
+        """Executa uma inserção de dados na tabela."""
+        query = f"INSERT OR REPLACE INTO {table} ({', '.join(columns)}) VALUES ({', '.join(['?'] * len(values))})"
+        return self.executar_query(query, values)
 
     def executar_update(self, table, set_values, where_clause, where_params=None):
         """Executa uma atualização de dados na tabela."""

@@ -4,9 +4,13 @@ from threading import Thread
 import json
 import traceback
 from controller.controller_perguntas import PerguntasController
+from controller.controller_respostas import RespostasController
 from controller.controller_robo import RoboController
 from controller.controller_servidor import ServidorClienteController
+from controller.controller_funcoes import FuncoesController
 from datetime import datetime, timedelta
+
+from funcoes import cadastrar_nova_atividade
 
 def data_atual_datetime_br():
     # Obtém o datetime atual em UTC
@@ -76,13 +80,13 @@ def receber_cliente(client):  # Takes client socket as argument.
             respostaTratamento = tratamento_mensagem_usuario(msg)
             if(respostaTratamento != None):
                 responde_cliente = respostaTratamento["responde_cliente"]
-                if(responde_cliente != True):
+                if(responde_cliente == True):
                     celular_cliente = respostaTratamento["celular_destinatario"]
                     celular_robo = respostaTratamento["celular_remetente"]
                     mensagens = respostaTratamento["mensagens_resposta"]
                     id_robo = respostaTratamento["id_robo"]
-                    id_pergunta = respostaTratamento["id_pergunta"]
-                    envia_mensagem_cliente(chave_acesso_cliente, celular_cliente, celular_robo, id_robo, mensagens, id_pergunta=id_pergunta)
+                    tentativa_resposta = respostaTratamento["tentativa_resposta"]
+                    envia_mensagem_cliente(chave_acesso_cliente, celular_cliente, celular_robo, id_robo, mensagens, tentativa_resposta=tentativa_resposta)
 
         if msg != bytes("{quit}", "utf8"):
             pass
@@ -93,7 +97,7 @@ def receber_cliente(client):  # Takes client socket as argument.
             broadcast(bytes("%s saiu do chat" % nomeclient, "utf8"))
             break
 
-def envia_mensagem_cliente(chave_acesso_cliente, celular_cliente, celular_robo, id_robo, mensagens, id_pergunta = None, mensagem_encerramento = False):
+def envia_mensagem_cliente(chave_acesso_cliente, celular_cliente, celular_robo, id_robo, mensagens, tentativa_resposta = 1):
     #procura o socket do cliente
     
     print("Enviar mensagens")    
@@ -101,22 +105,20 @@ def envia_mensagem_cliente(chave_acesso_cliente, celular_cliente, celular_robo, 
     
     if(clients[chave_acesso_cliente]):
         sock = clients[chave_acesso_cliente]
-        print("Enviado mensagem - "+str(len(mensagens)))
-        objMensagem = {"remetente": celular_robo, "destinatario": celular_cliente, "mensagens": mensagens, "id_robo": id_robo, "id_pergunta": id_pergunta}
-        print(objMensagem)
-        
+        objMensagem = {"remetente": celular_robo, "destinatario": celular_cliente, "mensagens": mensagens, "id_robo": id_robo, "tentativa_resposta": tentativa_resposta}        
         msgJson = json.dumps(objMensagem, ensure_ascii=False)        
         msgByte = bytes(msgJson, "utf8")
-        sock.send(msgByte)
-        
+        sock.send(msgByte)        
         for mensagem in mensagens:
             msg = mensagem["mensagem"]
+            id_pergunta = mensagem["id_pergunta"]
             id_msg_pergunta = mensagem["id_mensagem_pergunta"]
             horario_mensagem_string = mensagem["horariomensagem"]
             horario_mensagem = string_para_datetime_br(horario_mensagem_string)
-            ServidorClienteController.adicionar_nova_mensagem_robo(CAMINHO_DATABASE, celular_cliente, celular_robo, msg, id_robo, id_pergunta, id_mensagem_pergunta=id_msg_pergunta,horariomensagem=horario_mensagem, mensagem_encerramento=mensagem_encerramento)
-            
-            
+            tentativa_resposta = mensagem["tentativa_resposta"]
+            mensagem_encerramento = mensagem["mensagem_encerramento"]
+            ServidorClienteController.adicionar_nova_mensagem_robo(CAMINHO_DATABASE, celular_cliente, celular_robo, msg, id_robo, id_pergunta, id_mensagem_pergunta=id_msg_pergunta,horariomensagem=horario_mensagem, tentativa_resposta=tentativa_resposta, mensagem_encerramento=mensagem_encerramento )
+                        
 def broadcast(msg, prefix=""):  # prefix is for name identification.
     """Broadcasts a message to all the clients."""
 
@@ -125,6 +127,9 @@ def broadcast(msg, prefix=""):  # prefix is for name identification.
 
 def tratamento_mensagem_usuario(mensagemJson):
     # recebe mensagem
+    pergunta_controller = PerguntasController(CAMINHO_DATABASE)
+    funcoes_controller = FuncoesController(CAMINHO_DATABASE)
+
     mensagemJson = json.loads(mensagemJson)
     celular_cliente = mensagemJson["remetente"]
     celular_robo = mensagemJson["destinatario"]
@@ -132,7 +137,7 @@ def tratamento_mensagem_usuario(mensagemJson):
     destinatariogrupo = mensagemJson["destinatariogrupo"]
     id_robo = 1
     mensagem_recebida = mensagemJson["mensagem"]    
-    resposta_tratamento = {"responde_cliente": False, "id_robo": id_robo,  "id_pergunta": None, "mensagens_resposta": [], "celular_destinatario": celular_cliente, "celular_remetente": celular_robo}
+    resposta_tratamento = {"responde_cliente": False, "id_robo": id_robo,  "id_pergunta": None, "finalizar_atendimento": False, "mensagens_resposta": [], "celular_destinatario": celular_cliente, "celular_remetente": celular_robo, "tentativa_resposta": 1}
     try:
         horariomensagem = string_para_datetime_br(horariomensagem_formatado)
     except:
@@ -140,29 +145,156 @@ def tratamento_mensagem_usuario(mensagemJson):
         horariomensagem = None
     # Verifica se mensagem está no padrão ou contexto de alguma mensagem
     
-    id_ultima_pergunta = procura_ultima_pergunta_robo(celular_cliente, celular_robo)
-    
+    ultima_mensagem_robo = procura_ultima_mensagem_robo(celular_cliente, celular_robo)
+    encontrou_ultima_mensagem = ultima_mensagem_robo["encontrou"]
+    id_ultima_pergunta = ultima_mensagem_robo["id_pergunta"]
+    tentativa_ultima_pergunta = ultima_mensagem_robo["tentativa_resposta"]
+    id_proxima_pergunta = ""
+    mensagens_resposta = []
     # Se não existir ultima mensagem do robo ou a ultima pergunta é despedida, então selecione e "Pergunta Menu"
-    if(id_ultima_pergunta == None):
+    if(encontrou_ultima_mensagem == False):
         # Procura pergunta menu
         id_pergunta_menu = procura_pergunta_menu_robo(id_robo)
-        pergunta_controller = PerguntasController(CAMINHO_DATABASE)
-        mensagens_pergunta = pergunta_controller.listar_mensagens_pergunta(id_pergunta_menu)
-        mensagens_texto = []
-        for mensagem_pergunta in mensagens_pergunta:
+        id_proxima_pergunta = id_pergunta_menu    
+
+    existe_resposta_ultima_pergunta = existe_respostas_pergunta(id_ultima_pergunta)
+    tipo_resposta = "" 
+    encontrou_resposta = False
+    tentativa_resposta = 1
+    ultima_sequencia = 0
+    if(existe_resposta_ultima_pergunta == True):
+        respostas_pergunta = procura_respostas_pergunta(id_ultima_pergunta)  
+        for resposta in respostas_pergunta:
+            tipo_resposta = resposta.tipo_resposta
+            id_proxima_pergunta_resposta = resposta.id_proxima_pergunta
+            if(tipo_resposta == "opcao"):
+                opcao = str(resposta.opcao).strip()
+                mensagem_recebida_sep = mensagem_recebida.split(" ")
+                for mensagem in mensagem_recebida_sep:
+                    if mensagem == opcao:
+                        encontrou_resposta = True
+                        break
+                if(encontrou_resposta == True):
+                    id_proxima_pergunta = id_proxima_pergunta_resposta
+                    break 
+            elif(tipo_resposta == "variavel"):
+                nome_variavel = resposta.variavel
+                tipo_variavel = resposta.tipo_variavel                
+                valor_variavel = mensagem_recebida.strip()
+                #verificação da variavel
+                if(valor_variavel == ""):
+                    encontrou_resposta = False
+                else:
+                    encontrou_resposta = True
+                    ServidorClienteController.salvar_variavel_resposta_cliente(CAMINHO_DATABASE, id_robo=id_robo, celular_remetente=celular_cliente, nome_variavel=nome_variavel, valor=valor_variavel)
+                    print("Salvou a variavel ("+celular_cliente+") - "+nome_variavel+": "+valor_variavel)
+                    id_proxima_pergunta = id_proxima_pergunta_resposta
+                    break 
+        if(encontrou_resposta == False):
+            tentativa_resposta = tentativa_ultima_pergunta + 1
+            mensagem_padrao_tentativa_resposta = "Desculpa, parece que sua resposta não é válida. Podemos tentar novamente?"
+            ultima_sequencia += 1
             objMensagem = {
-                "id_pergunta": mensagem_pergunta.id_pergunta,  
-                "id_mensagem_pergunta": mensagem_pergunta.id,              
-                "mensagem": mensagem_pergunta.mensagem, 
-                "sequencia_mensagem": mensagem_pergunta.sequencia_mensagem,
-                "id_funcao": mensagem_pergunta.sequencia_mensagem,
-                "params_funcao": mensagem_pergunta.params_funcao,
+                "id_pergunta": id_ultima_pergunta,  
+                "id_mensagem_pergunta": 0,              
+                "mensagem": mensagem_padrao_tentativa_resposta, 
+                "sequencia_mensagem": ultima_sequencia,
+                "id_funcao": "",
+                "params_funcao": "",
+                "mensagem_encerramento": 0,
+                "tentativa_resposta": tentativa_resposta,
                 "horariomensagem": string_data_atual_datetime_br()}
-            mensagens_texto.append(objMensagem)
-        resposta_tratamento["id_pergunta"] = id_pergunta_menu
-        resposta_tratamento["responde_cliente"] = True
-        resposta_tratamento["mensagens_resposta"] = mensagens_texto
+            mensagens_resposta.append(objMensagem)            
+            id_proxima_pergunta = id_ultima_pergunta
+        
     
+    print("ID proxima pergunta - "+str(id_proxima_pergunta))
+    if(id_proxima_pergunta != ""):        
+        mensagens_pergunta = pergunta_controller.listar_mensagens_pergunta(id_proxima_pergunta) 
+        # ajustar aqui para o cadastro de nova atividade
+        # sempre quando houver função, deve ser feito aqui o processamento da função 
+        
+        for mensagem_pergunta in mensagens_pergunta:
+            usar_mensagem_padrao = True 
+            id_funcao =  mensagem_pergunta.id_funcao
+            id_pergunta = mensagem_pergunta.id_pergunta
+            id_mensagem_pergunta =  mensagem_pergunta.id       
+            mensagem = mensagem_pergunta.mensagem
+            
+            params_funcao = mensagem_pergunta.params_funcao
+            mensagem_encerramento = 0
+            tentativa_resposta = tentativa_resposta
+            horariomensagem = string_data_atual_datetime_br()
+            if(id_funcao != "" and id_funcao != None):
+                key_funcao_backend = funcoes_controller.obter_key_backend_via_id(id_funcao)
+                retorno_mensagens_funcao = []
+                if(key_funcao_backend == None):
+                    # se a função do backend nao existir, então deve pular para proxima mensagem
+                    continue
+
+                #231733863532 - Cadastro de novas atividades
+                if(key_funcao_backend == "231733863532"):
+                    retorno_funcao = cadastrar_nova_atividade(CAMINHO_DATABASE, celular_cliente, id_robo)
+                    retorno_mensagens_funcao = retorno_funcao["mensagens"]
+
+
+                if(len(retorno_mensagens_funcao) > 0):
+                    usar_mensagem_padrao = False
+                    for mensagem_funcao in retorno_mensagens_funcao:
+                        ultima_sequencia += 1
+                        objMensagem = {
+                            "id_pergunta": id_pergunta,  
+                            "id_mensagem_pergunta": id_mensagem_pergunta,              
+                            "mensagem": mensagem_funcao, 
+                            "sequencia_mensagem": ultima_sequencia,
+                            "id_funcao": id_funcao,
+                            "params_funcao": params_funcao,
+                            "mensagem_encerramento": 0,
+                            "tentativa_resposta": tentativa_resposta,
+                            "horariomensagem": string_data_atual_datetime_br()
+                        }
+                        mensagens_resposta.append(objMensagem)
+                
+            if (usar_mensagem_padrao == True):
+                ultima_sequencia += 1
+                objMensagem = {
+                    "id_pergunta": mensagem_pergunta.id_pergunta,  
+                    "id_mensagem_pergunta": mensagem_pergunta.id,              
+                    "mensagem": mensagem_pergunta.mensagem, 
+                    "sequencia_mensagem": ultima_sequencia,
+                    "id_funcao": mensagem_pergunta.id_funcao,
+                    "params_funcao": mensagem_pergunta.params_funcao,
+                    "mensagem_encerramento": 0,
+                    "tentativa_resposta": tentativa_resposta,
+                    "horariomensagem": string_data_atual_datetime_br()}
+                mensagens_resposta.append(objMensagem)
+        existe_resposta_pergunta = existe_respostas_pergunta(id_proxima_pergunta)  
+        if(existe_resposta_pergunta == False):
+            # procura mensagem de finalização de atendimento
+            id_pergunta_encerramento = procura_pergunta_encerramento_atendimento(id_robo)
+            # adiciona as mensagens de finalização de atendimento
+            mensagens_pergunta = pergunta_controller.listar_mensagens_pergunta(id_pergunta_encerramento)
+            ultima_sequencia += 1
+            for mensagem_pergunta in mensagens_pergunta:
+                objMensagem = {
+                    "id_pergunta": mensagem_pergunta.id_pergunta,  
+                    "id_mensagem_pergunta": mensagem_pergunta.id,              
+                    "mensagem": mensagem_pergunta.mensagem, 
+                    "sequencia_mensagem": ultima_sequencia,
+                    "id_funcao": mensagem_pergunta.id_funcao,
+                    "params_funcao": mensagem_pergunta.params_funcao,
+                    "mensagem_encerramento": 1,
+                    "tentativa_resposta": tentativa_resposta,
+                    "horariomensagem": string_data_atual_datetime_br()}
+                mensagens_resposta.append(objMensagem)
+
+        resposta_tratamento["id_pergunta"] = id_proxima_pergunta
+        resposta_tratamento["responde_cliente"] = True
+        resposta_tratamento["mensagens_resposta"] = mensagens_resposta
+        resposta_tratamento["finalizar_atendimento"] = False if existe_resposta_pergunta else True
+
+    resposta_tratamento["tentativa_resposta"] = tentativa_resposta
+
     # # Salva no histórico do robo a pergunta selecionada
     
     # # Envia para o cliente a proxima pergunta do robo
@@ -170,19 +302,22 @@ def tratamento_mensagem_usuario(mensagemJson):
     ServidorClienteController.adicionar_nova_mensagem_usuario(CAMINHO_DATABASE, celular_cliente, celular_robo, id_robo, mensagem_recebida, horariomensagem, destinatariogrupo)
         
     return resposta_tratamento
-    
         
-def procura_ultima_pergunta_robo(celular_cliente, celular_robo):
+def procura_ultima_mensagem_robo(celular_cliente, celular_robo):   
     result_ultima_mensagem_robo = ServidorClienteController.procura_ultima_mensagem_robo(CAMINHO_DATABASE, celular_cliente, celular_robo)
-    print("Ultima pergunta robo:")
+    print("Ultima mensagem robo:")
     print(result_ultima_mensagem_robo)
-    id_ultima_mensagem = None
+    ultima_mensagem = {"encontrou": False, "id_ultima_mensagem": None, "id_pergunta": None, "horariomensagem": None, "mensagem_encerramento": 0, "tentativa_resposta": 0}
     if result_ultima_mensagem_robo:
         for row in result_ultima_mensagem_robo:
-            id_ultima_mensagem = row[0]
-            print(row[0])
-            print("ID ultima mensagem robo - "+str(row[0]))   
-    return id_ultima_mensagem
+            #id, id_pergunta, horariomensagem, mensagem_encerramento, tentativa_resposta
+            ultima_mensagem["encontrou"] = True
+            ultima_mensagem["id_ultima_mensagem"] = row[0]
+            ultima_mensagem["id_pergunta"] = row[1]
+            ultima_mensagem["horariomensagem"] = row[2]
+            ultima_mensagem["mensagem_encerramento"] = row[3]
+            ultima_mensagem["tentativa_resposta"] = row[4]
+    return ultima_mensagem
 
 def procura_pergunta_menu_robo(id_robo):
     result_pergunta_menu = ServidorClienteController.procura_pergunta_menu_robo(CAMINHO_DATABASE, id_robo)
@@ -190,19 +325,33 @@ def procura_pergunta_menu_robo(id_robo):
     if result_pergunta_menu:
         for row in result_pergunta_menu:
             id_pergunta_menu = row[0]
-            print(row[0])
-            print("Pergunta Menu - "+str(row))
     return id_pergunta_menu
 
+def procura_respostas_pergunta(id_pergunta):
+    respostaController = RespostasController(CAMINHO_DATABASE)
+    result_respostas_pergunta = respostaController.listar_respostas_por_pergunta(id_pergunta)
+    return result_respostas_pergunta
+
+def existe_respostas_pergunta(id_pergunta):
+    respostaController = RespostasController(CAMINHO_DATABASE)
+    existe_resposta = respostaController.existe_resposta_pergunta(id_pergunta)
+    return existe_resposta
+
+def procura_pergunta_encerramento_atendimento(id_robo):
+    result_pergunta_encerramento = ServidorClienteController.procura_pergunta_encerramento_robo(CAMINHO_DATABASE, id_robo)
+    id_pergunta_encerramento = None
+    if result_pergunta_encerramento:
+        for row in result_pergunta_encerramento:
+            id_pergunta_encerramento = row[0]
+    return id_pergunta_encerramento
 
 
-    
 
 clients = {}
 clients_usuario = {}
 clients_robo = {}
 addresses = {}
-CAMINHO_DATABASE = "C:\\Users\\MarcusViniciusSoares\\OneDrive - GRANT THORNTON BRASIL\\Área de Trabalho\\Projetos\\ChatBotUniversal\\ChatBotUniversal\\chatbotui\\db\\repository\\chatbot.db"
+CAMINHO_DATABASE = "C:\\Users\\victt\\Desktop\\Marcus\\Projetos\\Chatbot\\chatbotui\\db\\repository\\chatbot.db"
 HOST = "localhost"
 PORT = 33000
 BUFSIZ = 1024

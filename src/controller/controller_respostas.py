@@ -18,17 +18,22 @@ class Resposta(Base):
     resposta = Column(String)
     opcao = Column(String, default=None)
     variavel = Column(String, default=None)
+    tipo_variavel = Column(String, default=None)
+    confirmacao_variavel = Column(Integer, default=0)
     id_proxima_pergunta = Column(Integer, default=None)
     dt_create = Column(DateTime, default=datetime_brasil)
-    last_update = Column(DateTime, default=datetime_brasil, onupdate=datetime_brasil)   
+    last_update = Column(DateTime, default=datetime_brasil, onupdate=datetime_brasil) 
 
-    def __init__(self, id_pergunta, tipo_resposta, resposta, id_proxima_pergunta = None, opcao=None, variavel=None):
+
+    def __init__(self, id_pergunta, tipo_resposta, resposta, id_proxima_pergunta = None, opcao=None, variavel=None, tipo_variavel=None, confirmacao_variavel = 0):
         self.id_pergunta = id_pergunta
         self.tipo_resposta = tipo_resposta
         self.resposta = resposta
         self.opcao = opcao
         self.variavel = variavel
         self.id_proxima_pergunta = id_proxima_pergunta
+        self.tipo_variavel = tipo_variavel
+        self.confirmacao_variavel = confirmacao_variavel
        
 class RespostasController:
     def __init__(self, caminhobd):
@@ -40,10 +45,12 @@ class RespostasController:
         # Cria uma fábrica de sessão para interagir com o banco de dados
         self.Session = sessionmaker(bind=self.engine)
 
-    def cadastrar_resposta(self, id_pergunta, tipo_resposta, resposta, id_proxima_pergunta = None, opcao=None, variavel=None):
+    def cadastrar_resposta(self, id_pergunta, tipo_resposta, resposta, id_proxima_pergunta = None, opcao=None, variavel=None, tipo_variavel=None):
         """Cadastra uma nova resposta no banco de dados."""
+        print("Cadastrar nova resposta")
+        
         new_resposta = Resposta(id_pergunta=id_pergunta, tipo_resposta=tipo_resposta,
-                                resposta=resposta, opcao=opcao, variavel=variavel, id_proxima_pergunta=id_proxima_pergunta)
+                                resposta=resposta, opcao=opcao, variavel=variavel, id_proxima_pergunta=id_proxima_pergunta, tipo_variavel=tipo_variavel)
         session = self.Session()
         session.add(new_resposta)
         session.commit()
@@ -100,6 +107,13 @@ class RespostasController:
         session.close()
         return respostas 
     
+    def existe_resposta_pergunta(self, id_pergunta):
+        session = self.Session()
+        respostas = session.query(Resposta).filter_by(id_pergunta=id_pergunta).all()
+        session.close()
+        existe_resposta = True if len(respostas) > 0 else False
+        return existe_resposta 
+
     def limpar_tabelas(self, security = False):
         if(security == True):
             return

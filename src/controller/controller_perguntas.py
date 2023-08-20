@@ -211,3 +211,14 @@ class PerguntasController:
         session.close()
 
         return ultima_pergunta
+    
+    def obter_pergunta(self, id_pergunta):
+        session = self.Session()
+
+        # Verifica se a pergunta existe no banco de dados
+        pergunta = session.query(Pergunta).get(id_pergunta)
+        if not pergunta:
+            print("A pergunta não foi encontrada.")
+            session.close()
+            return None
+        return pergunta
